@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Prueba de contrato · mfe-seguimiento</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #fafafa; }
+    li { list-style: none; margin: 4px 0; } .ok { color: #1b7a3e; } .falla { color: #c0392b; font-weight: bold; }
+    #zona { border: 1px dashed #bbb; padding: 12px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Prueba de contrato · mfe-seguimiento</h1>
+  <p>Verifica, sin el contenedor, lo que el micro frontend promete en CONTRATOS.md. Los estados avanzan cada 300 ms.</p>
+  <ul id="resultados"></ul>
+  <p id="resumen">Ejecutando…</p>
+  <div id="zona"></div>
+
+  <script type="module">
+    import './seguimiento.js?intervalo=300';
+
+    const resultados = [];
+    function verificar(descripcion, condicion) {
+      console.assert(condicion, descripcion);
+      resultados.push(!!condicion);
+      document.getElementById('resultados').insertAdjacentHTML('beforeend',
+        '<li class="' + (condicion ? 'ok' : 'falla') + '">' + (condicion ? '✓ ' : '✗ ') + descripcion + '</li>');
+    }
+    const esperar = ms => new Promise(r => setTimeout(r, ms));
+    const estados = [];
+    window.addEventListener('pedido:estado', e => estados.push(e.detail));
+
+    // 1. Expone lo acordado
+    verificar('define la etiqueta <mfe-seguimiento>', !!customElements.get('mfe-seguimiento'));
+
+    // 2. El montaje genera contenido
+    const el = document.createElement('mfe-seguimiento');
+    document.getElementById('zona').appendChild(el);
+    await el.updateComplete;
+    verificar('al montarse crea un shadowRoot con contenido', !!(el.shadowRoot && el.shadowRoot.querySelector('h2')));
+
+    // 3. Compatibilidad hacia atrás: acepta pedido:confirmado v1.0 (sin metodoPago) y v1.1 (con metodoPago)
+    const base = { fecha: new Date().toISOString(), total: 12500,
+      items: [{ id: 1, nombre: 'Plato A', precio: 10000, cantidad: 1 }, { id: 2, nombre: 'Plato B', precio: 2500, cantidad: 1 }] };
+    window.dispatchEvent(new CustomEvent('pedido:confirmado', { detail: { ...base, version: '1.0', id: 'P-v10' } }));
+    window.dispatchEvent(new CustomEvent('pedido:confirmado', { detail: { ...base, version: '1.1', id: 'P-v11', metodoPago: 'Nequi' } }));
+    await el.updateComplete;
+    const tarjetas = el.shadowRoot.querySelectorAll('.pedido');
+    verificar('muestra los dos pedidos (v1.0 y v1.1)', tarjetas.length === 2);
+    verificar('v1.1: muestra el metodoPago cuando viene', el.shadowRoot.querySelector('[data-id="P-v11"]').textContent.includes('Nequi'));
+    verificar('ambos empiezan en "Recibido"', [...tarjetas].every(t => t.dataset.estado === 'Recibido'));
+
+    // 4. pedido:estado v1.0 { version, id, numero, estado, estadoAnterior }
+    const primero = estados.find(d => d.id === 'P-v10');
+    verificar('publica pedido:estado al recibir un pedido', !!primero);
+    verificar('pedido:estado.version es "1.0"', primero && primero.version === '1.0');
+    verificar('trae id, numero y estado', primero && typeof primero.id === 'string' && typeof primero.numero === 'number' && primero.estado === 'Recibido');
+
+    // 5. Los estados avanzan solos (setInterval) hasta "Entregado"
+    await esperar(300 * 3 + 400);
+    await el.updateComplete;
+    const secuencia = estados.filter(d => d.id === 'P-v10').map(d => d.estado);
+    verificar('avanza Recibido → En preparación → En camino → Entregado',
+      secuencia.join(' → ') === 'Recibido → En preparación → En camino → Entregado');
+    verificar('estadoAnterior encadena los cambios', estados.filter(d => d.id === 'P-v10')[2].estadoAnterior === 'En preparación');
+    verificar('la vista termina en "Entregado"', el.shadowRoot.querySelector('[data-id="P-v10"]').dataset.estado === 'Entregado');
+    await esperar(700);
+    verificar('se detiene al entregar (no publica más)', estados.filter(d => d.id === 'P-v10').length === 4);
+
+    // 6. Desmontaje limpio
+    el.remove();
+    verificar('se puede desmontar sin errores', !document.querySelector('#zona mfe-seguimiento'));
+
+    const pasaron = resultados.filter(Boolean).length;
+    document.getElementById('resumen').textContent = pasaron + ' de ' + resultados.length + ' verificaciones pasaron';
+    document.title = (pasaron === resultados.length ? '✓ ' : '✗ ') + document.title;
+    window.RESULTADO_CONTRATO = { pasaron: pasaron, total: resultados.length };
+  </script>
+</body>
+</html>
