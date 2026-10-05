@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>mfe-seguimiento (modo independiente)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #fafafa; }
+    .banda { background: #fff3c4; padding: 8px 12px; margin-bottom: 16px; font-size: 13px; }
+    #eventos { font-family: monospace; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="banda">
+    Modo independiente del equipo Pedidos: simulamos el evento del carrito (estados cada 2 s).
+    <button id="v10">Simular pedido v1.0</button>
+    <button id="v11">Simular pedido v1.1 (con metodoPago)</button>
+    · <a href="contrato.html">prueba de contrato</a>
+  </div>
+  <mfe-seguimiento></mfe-seguimiento>
+  <h3>Eventos publicados</h3>
+  <ul id="eventos"></ul>
+
+  <script type="module" src="seguimiento.js?intervalo=2000"></script>
+  <script>
+    function simular(version) {
+      const detail = { version, id: 'P-' + Date.now(), fecha: new Date().toISOString(), total: 12500,
+        items: [{ id: 101, nombre: 'Plato de prueba A', precio: 10000, cantidad: 1 },
+                { id: 102, nombre: 'Plato de prueba B', precio: 2500, cantidad: 1 }] };
+      if (version === '1.1') detail.metodoPago = 'Nequi';
+      window.dispatchEvent(new CustomEvent('pedido:confirmado', { detail }));
+    }
+    document.getElementById('v10').onclick = () => simular('1.0');
+    document.getElementById('v11').onclick = () => simular('1.1');
+    window.addEventListener('pedido:estado', function (e) {
+      document.getElementById('eventos').insertAdjacentHTML('beforeend', '<li>pedido:estado → ' + JSON.stringify(e.detail) + '</li>');
+    });
+  </script>
+</body>
+</html>
